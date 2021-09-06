@@ -23,11 +23,17 @@ pub mod success_failure_ctr {
         pub fn increment_success(&mut self) {
             self.success_ctr = self.success_ctr + T::one();
         }
+        pub fn add_successes(&mut self, amount: T) {
+            self.success_ctr = self.success_ctr + amount;
+        }
         pub fn success_ctr(&self) -> T {
             self.success_ctr
         }
         pub fn increment_failure(&mut self) {
             self.failure_ctr = self.failure_ctr + T::one();
+        }
+        pub fn add_failures(&mut self, amount: T) {
+            self.failure_ctr = self.failure_ctr + amount;
         }
         pub fn failure_ctr(&self) -> T {
             self.failure_ctr
@@ -77,7 +83,7 @@ pub enum IopResults {
     Write(Result<usize, ErrorKind>),
     Flush(Result<(), ErrorKind>)
 }
-type IopInfoPair = (IopActions, IopResults);
+pub type IopInfoPair = (IopActions, IopResults);
 
 #[derive(Debug)]
 pub struct IOStatWrapper<T, C> {
