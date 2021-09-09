@@ -3,6 +3,8 @@
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::io::Result as IOResult;
 use std::io::ErrorKind;
+use std::io::{IoSlice, IoSliceMut};
+
 use std::convert::TryFrom;
 
 use std::iter::Extend;
@@ -163,6 +165,58 @@ impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
         self.iop_log.extend(extend_item);
         read_result
     }
+
+    #[rustversion::since(1.36)]
+    fn read_vectored(&mut self, bufs: &mut [IoSliceMut<'_>]) -> IOResult<usize> {
+        self.inner_io.read_vectored(bufs)
+    }
+    #[rustversion::nightly]
+    fn is_read_vectored(&self) -> bool {
+        self.inner_io.is_read_vectored()
+    }
+    #[rustversion::nightly]
+    #[inline]
+    unsafe fn initializer(&self) -> Initializer {
+        self.inner_io.initializer()
+    }
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IOResult<usize> {
+        self.inner_io.read_to_end(buf)
+    }
+    fn read_to_string(&mut self, buf: &mut String) -> IOResult<usize> {
+        self.inner_io.read_to_string(buf)
+    }
+    #[rustversion::since(1.6)]
+    fn read_exact(&mut self, buf: &mut [u8]) -> IOResult<()> {
+        self.inner_io.read_exact(buf)
+    }
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        // Do not pass this one through to the inner_io object
+        self
+    }
+    // Missing: bytes, chain, and take, as the struct fields are private
+    // Issues arise if default impls are overriden, but this is unlikely
+
+    /*fn bytes(self) -> Bytes<Self>
+    where
+        Self: Sized,
+    {
+        Bytes{inner: self}
+    }
+    fn chain<R: Read>(self, next: R) -> Chain<Self, R>
+    where
+        Self: Sized,
+    {
+        Chain{first: self, second: next, done_first: false}
+    }
+    fn take(self, limit: u64) -> Take<Self>
+    where
+        Self: Sized,
+    {
+        Take{inner: self, limit}
+    }*/
 }
 impl<T: Read, C> IOStatWrapper<T, C> {
     pub fn read_call_counter(&self) -> &SuccessFailureCounter<u64> {
@@ -265,6 +319,32 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
         };
         self.iop_log.extend(extend_item);
         flush_result
+    }
+
+    #[rustversion::since(1.36.0)]
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IOResult<usize> {
+        self.inner_io.write_vectored(bufs)
+    }
+    #[rustversion::nightly]
+    fn is_write_vectored(&self) -> bool {
+        self.inner_io.is_write_vectored()
+    }
+    fn write_all(&mut self, mut buf: &[u8]) -> IOResult<()> {
+        self.inner_io.write_all(buf)
+    }
+    #[rustversion::nightly]
+    fn write_all_vectored(&mut self, mut bufs: &mut [IoSlice<'_>]) -> IOResult<()> {
+        self.inner_io.write_all_vectored(bufs)
+    }
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> IOResult<()> {
+        self.inner_io.write_fmt(fmt)
+    }
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        // Do not pass this one through to the inner_io object
+        self
     }
 }
 impl<T: Write, C> IOStatWrapper<T, C> {
