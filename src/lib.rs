@@ -15,6 +15,7 @@ pub mod success_failure_ctr {
     use num_traits::{PrimInt, Unsigned};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    /// A struct for counting successful and failed attempts.
     pub struct SuccessFailureCounter<T: PrimInt + Unsigned> {
         success_ctr: T,
         failure_ctr: T
@@ -47,6 +48,8 @@ enum SignedAbsResult<T: PrimInt + Unsigned> {
     Zero,
     Positive(T)
 }
+/// Returns the absolute value of a signed number, along with the original sign.
+/// Needed because abs(i*::MIN) returns a signed value and is still negative
 fn abs_sign_tuple<S, U>(signed_number: S) -> SignedAbsResult<U>
 where
     S: PrimInt + Signed,
@@ -70,22 +73,35 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
+/// Types of IO Operations.
 pub enum IopActions {
+    /// Attempted read of the given size.
     Read(usize),
+    /// Attempted seek to the given position.
     Seek(SeekFrom),
+    /// Attempted write of the given size.
     Write(usize),
+    /// Attempted flush of a writer.
     Flush
 }
 #[derive(Debug, Clone, Copy)]
+/// Results of IO Operations.
+///
+/// We store only ErrorKind because IOError is not Clonable and Arc<&IOError> would be messy with lifetimes.
 pub enum IopResults {
+    /// Result of a read operation.
     Read(Result<usize, ErrorKind>),
+    /// Result of a seek operation.
     Seek(Result<u64, ErrorKind>),
+    /// Result of a write operation.
     Write(Result<usize, ErrorKind>),
+    /// Result of a flush operation.
     Flush(Result<(), ErrorKind>)
 }
 pub type IopInfoPair = (IopActions, IopResults);
 
 #[derive(Debug)]
+/// A wrapper around an IO object that tracks operations and statistics.
 pub struct IOStatWrapper<T, C> {
     inner_io: T,
     iop_log: C,
@@ -102,7 +118,8 @@ impl<T, C> IOStatWrapper<T, C>
 where
     C: Default + Extend<IopInfoPair>
 {
-    /// Object must be passed in immediately
+    /// Create a new IOStatWrapper with a manually given seek position.
+    /// Detecting the seek position automatically is not possible without specialization.
     pub fn new(obj: T, start_seek_pos: u64) -> IOStatWrapper<T, C> {
         IOStatWrapper {
             inner_io: obj,
@@ -116,9 +133,11 @@ where
             write_byte_counter: 0
         }
     }
+    /// Extract the original IO object.
     pub fn into_inner(self) -> T {
         self.inner_io
     }
+    /// Get the IO operation log containing operations and their results.
     pub fn iop_log(&self) -> &C {
         &self.iop_log
     }
@@ -209,6 +228,7 @@ impl<T: Seek, C> IOStatWrapper<T, C> {
     pub fn seek_call_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.seek_call_counter
     }
+    /// Get the current seek position without doing an actual seek operation.
     pub fn seek_pos(&self) -> u64 {
         self.seek_pos
     }
