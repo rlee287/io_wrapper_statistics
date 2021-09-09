@@ -187,6 +187,23 @@ impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
         self.iop_log.extend(extend_item);
         seek_result
     }
+    /*
+     * For provided methods, do not do logging in them
+     * If inner's impl calls seek then it gets logged already
+     * If inner's impl avoids seek (e.g. stream_position) then no operation occured
+     */
+    #[rustversion::since(1.55)]
+    fn rewind(&mut self) -> IOResult<()> {
+        self.inner_io.rewind()
+    }
+    #[rustversion::nightly]
+    fn stream_len(&mut self) -> IOResult<u64> {
+        self.inner_io.stream_len()
+    }
+    #[rustversion::since(1.51)]
+    fn stream_position(&mut self) -> IOResult<u64> {
+        self.inner_io.stream_position()
+    }
 }
 impl<T: Seek, C> IOStatWrapper<T, C> {
     pub fn seek_call_counter(&self) -> &SuccessFailureCounter<u64> {

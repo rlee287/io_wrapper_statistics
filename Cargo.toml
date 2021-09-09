@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 num-traits = "0.2"
+rustversion = "1.0"
