@@ -41,6 +41,9 @@ pub mod success_failure_ctr {
         pub fn failure_ctr(&self) -> T {
             self.failure_ctr
         }
+        pub fn attempt_ctr(&self) -> T {
+            self.success_ctr + self.failure_ctr
+        }
     }
 }
 
