@@ -115,7 +115,7 @@ pub struct IOStatWrapper<T, C> {
     seek_call_counter: SuccessFailureCounter<u64>,
     seek_pos: u64, // Meaningless unless T: Seek
     write_call_counter: SuccessFailureCounter<u64>,
-    write_flush_counter: u64,
+    write_flush_counter: SuccessFailureCounter<u64>,
     write_byte_counter: usize
 }
 
@@ -134,7 +134,7 @@ where
             seek_call_counter: SuccessFailureCounter::default(),
             seek_pos: start_seek_pos,
             write_call_counter: SuccessFailureCounter::default(),
-            write_flush_counter: 0,
+            write_flush_counter: SuccessFailureCounter::default(),
             write_byte_counter: 0
         }
     }
@@ -312,13 +312,17 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
         write_result
     }
     fn flush(&mut self) -> IOResult<()> {
-        self.write_flush_counter += 1;
         let flush_result = self.inner_io.flush();
         let extend_item: [IopInfoPair; 1] = match flush_result {
-            Ok(()) => [(IopActions::Flush, IopResults::Flush(Ok(())))],
-            Err(ref e) => 
+            Ok(()) => {
+                self.write_flush_counter.increment_success();
+                [(IopActions::Flush, IopResults::Flush(Ok(())))]
+            },
+            Err(ref e) => {
+                self.write_flush_counter.increment_failure();
                 [(IopActions::Flush,
                     IopResults::Flush(Err(e.kind())))]
+            }
         };
         self.iop_log.extend(extend_item);
         flush_result
