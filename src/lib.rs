@@ -54,12 +54,14 @@ enum SignedAbsResult<T: PrimInt + Unsigned> {
     Positive(T)
 }
 /// Returns the absolute value of a signed number, along with the original sign.
-/// Needed because abs(i*::MIN) returns a signed value and is still negative
+/// `abs()` returns a signed value and `abs(i*::MIN)` is still negative,
+/// so we handle this specifically and add typed inputs/outputs
 fn abs_sign_tuple<S, U>(signed_number: S) -> SignedAbsResult<U>
 where
     S: PrimInt + Signed,
     U: PrimInt + Unsigned
 {
+    // Did not assert sizeof(S)==sizeof(U) because that expands to unsafe
     if signed_number.signum() == S::one() {
         SignedAbsResult::Positive(U::from(signed_number.abs()).unwrap())
     } else if signed_number.signum() == S::zero() {
@@ -92,7 +94,7 @@ pub enum IopActions {
 #[derive(Debug, Clone, Copy)]
 /// Results of IO Operations.
 ///
-/// We store only ErrorKind because IOError is not Clonable and Arc<&IOError> would be messy with lifetimes.
+/// We store only [`std::io::ErrorKind`] because [`std::io::Result`] is not clonable and `Arc<std::io::Error>` would be messy with lifetimes.
 pub enum IopResults {
     /// Result of a read operation.
     Read(Result<usize, ErrorKind>),
@@ -138,18 +140,22 @@ where
             write_byte_counter: 0
         }
     }
-    /// Extract the original IO object.
+    /// Extract the original I/O object.
     pub fn into_inner(self) -> T {
         self.inner_io
     }
-    /// Get the IO operation log containing operations and their results.
+    /// Get the I/O operation log containing operations and their results.
     pub fn iop_log(&self) -> &C {
         &self.iop_log
     }
 }
 
 impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
+    //! We wrap most methods of [`Read`], including provided ones, and pass calls through to the inner I/O object.
+    //! The I/O operation log and statistics are only explicitly updated in the [`Read::read()`] function, as it is expected that the other methods are implemented with it.
+    //! Notably, we do not passthrough [`Read::bytes()`], [`Read::chain()`], and [`Read::take()`] as the structs they return have private implementation details that we need to see to have correct type generics. However, for this reason, we do not expect other [`Read`] implementations to have their own implementations either, so this shouldn't be an issue.
     fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
+        //! Passthrough for the `inner_io` read call that increments a call counter and appends a [`IopResults::Read`] object to the log.
         let read_result = self.inner_io.read(buf);
         let extend_item: [IopInfoPair; 1] = match read_result {
             Ok(n) => {
@@ -222,16 +228,21 @@ impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
     }*/
 }
 impl<T: Read, C> IOStatWrapper<T, C> {
+    /// Returns the number of times [`Read::read()`] was invoked.
     pub fn read_call_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.read_call_counter
     }
+    /// Returns the total number of bytes read.
     pub fn read_byte_counter(&self) -> usize {
         self.read_byte_counter
     }
 }
 
 impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
+    //! We wrap all methods of [`Seek`], including provided ones, and pass calls through to the inner I/O object.
+    //! The I/O operation log and statistics are only explicitly updated in the [`Seek::seek()`] function, as it is expected that the other methods are implemented with it.
     fn seek(&mut self, pos: SeekFrom) -> IOResult<u64> {
+        //! Passthrough for the `inner_io` seek call that increments a call counter and appends a [`IopResults::Seek`] object to the log.
         let old_pos = self.seek_pos;
         let seek_result = self.inner_io.seek(pos);
         let extend_item: [IopInfoPair; 1] = match seek_result {
@@ -263,11 +274,6 @@ impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
         self.iop_log.extend(extend_item);
         seek_result
     }
-    /*
-     * For provided methods, do not do logging in them
-     * If inner's impl calls seek then it gets logged already
-     * If inner's impl avoids seek (e.g. stream_position) then no operation occured
-     */
     #[rustversion::since(1.55)]
     fn rewind(&mut self) -> IOResult<()> {
         self.inner_io.rewind()
@@ -282,6 +288,7 @@ impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
     }
 }
 impl<T: Seek, C> IOStatWrapper<T, C> {
+    /// Returns the number of times [`Seek::seek()`] was invoked.
     pub fn seek_call_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.seek_call_counter
     }
@@ -292,7 +299,10 @@ impl<T: Seek, C> IOStatWrapper<T, C> {
 }
 
 impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
+    //! We wrap all methods of [`Write`], including provided ones, and pass calls through to the inner I/O object.
+    //! The I/O operation log and statistics are explicitly updated in the [`Write::write()`] and [`Write::flush()`] functions, as it is expected that the other methods are implemented with them.
     fn write(&mut self, buf: &[u8]) -> IOResult<usize> {
+        //! Passthrough for the `inner_io` write call that increments a call counter and appends a [`IopResults::Write`] object to the log.
         let write_result = self.inner_io.write(buf);
         let extend_item: [IopInfoPair; 1] = match write_result {
             Ok(n) => {
@@ -312,6 +322,7 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
         write_result
     }
     fn flush(&mut self) -> IOResult<()> {
+        //! Passthrough for the `inner_io` write call that increments a call counter and appends a [`IopResults::Flush`] object to the log.
         let flush_result = self.inner_io.flush();
         let extend_item: [IopInfoPair; 1] = match flush_result {
             Ok(()) => {
@@ -355,9 +366,11 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
     }
 }
 impl<T: Write, C> IOStatWrapper<T, C> {
+    /// Returns the number of times [`Write::write()`] was invoked.
     pub fn write_call_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.write_call_counter
     }
+    /// Returns the number of times [`Write::flush()`] was invoked.
     pub fn write_flush_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.write_flush_counter
     }
