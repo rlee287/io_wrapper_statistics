@@ -358,8 +358,8 @@ impl<T: Write, C> IOStatWrapper<T, C> {
     pub fn write_call_counter(&self) -> &SuccessFailureCounter<u64> {
         &self.write_call_counter
     }
-    pub fn write_flush_counter(&self) -> u64 {
-        self.write_flush_counter
+    pub fn write_flush_counter(&self) -> &SuccessFailureCounter<u64> {
+        &self.write_flush_counter
     }
     pub fn write_byte_counter(&self) -> usize {
         self.write_byte_counter
