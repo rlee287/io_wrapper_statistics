@@ -293,6 +293,9 @@ impl<T: Seek, C> IOStatWrapper<T, C> {
         &self.seek_call_counter
     }
     /// Get the current seek position without doing an actual seek operation.
+    ///
+    /// This is accomplished by storing a separate position integer.
+    /// When debug assertions are on we assert after every seek operation that the cursor is where we expect it to be.
     pub fn seek_pos(&self) -> u64 {
         self.seek_pos
     }
@@ -347,6 +350,8 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
     fn is_write_vectored(&self) -> bool {
         self.inner_io.is_write_vectored()
     }
+    // Keep the original declaration even if mut is unneeded here
+    #[allow(unused_mut)]
     fn write_all(&mut self, mut buf: &[u8]) -> IOResult<()> {
         self.inner_io.write_all(buf)
     }
