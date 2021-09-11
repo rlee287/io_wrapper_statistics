@@ -1,3 +1,4 @@
+#![doc(html_root_url = "https://docs.rs/io_wrapper_statistics/0.1.1")]
 
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::io::Result as IOResult;
