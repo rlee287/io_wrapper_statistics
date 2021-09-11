@@ -20,6 +20,7 @@ fn test_basic_counts() {
 
     assert_eq!(io_wrapper.read_call_counter(), &io_count_expect);
     assert_eq!(io_wrapper.read_byte_counter(), 8);
+    assert_eq!(io_wrapper.seek_call_counter(), &io_count_expect);
     assert_eq!(io_wrapper.seek_pos(), io_wrapper.stream_position().unwrap());
     assert_eq!(io_wrapper.write_call_counter(), &io_count_expect);
     assert_eq!(io_wrapper.write_byte_counter(), 4);
