@@ -3,8 +3,13 @@ name = "io_wrapper_statistics"
 version = "0.1.0"
 edition = "2018"
 license = "MIT OR Apache-2.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Wrap an I/O object and collect statistics about I/O operations"
+homepage = "https://github.com/rlee287/io_wrapper_statistics"
+documentation = "https://docs.rs/io_wrapper_statistics"
+repository = "https://github.com/rlee287/io_wrapper_statistics"
+readme = "README.md"
+keywords = ["io-tracing"]
+categories = ["development-tools", "development-tools::debugging", "development-tools::profiling"]
 
 [dependencies]
 num-traits = "0.2"
