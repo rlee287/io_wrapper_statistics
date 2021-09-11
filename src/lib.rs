@@ -1,9 +1,11 @@
-#![forbid(unsafe_code)]
 
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::io::Result as IOResult;
 use std::io::ErrorKind;
 use std::io::{IoSlice, IoSliceMut};
+#[rustversion::nightly]
+#[cfg(feature = "read_initializer")]
+use std::io::Initializer;
 
 use std::convert::TryFrom;
 
@@ -180,11 +182,13 @@ impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
         self.inner_io.read_vectored(bufs)
     }
     #[rustversion::nightly]
+    #[cfg(feature = "can_vector")]
     fn is_read_vectored(&self) -> bool {
         self.inner_io.is_read_vectored()
     }
     #[rustversion::nightly]
     #[inline]
+    #[cfg(feature = "read_initializer")]
     unsafe fn initializer(&self) -> Initializer {
         self.inner_io.initializer()
     }
@@ -279,6 +283,7 @@ impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
         self.inner_io.rewind()
     }
     #[rustversion::nightly]
+    #[cfg(feature = "seek_stream_len")]
     fn stream_len(&mut self) -> IOResult<u64> {
         self.inner_io.stream_len()
     }
@@ -347,6 +352,7 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
         self.inner_io.write_vectored(bufs)
     }
     #[rustversion::nightly]
+    #[cfg(feature = "can_vector")]
     fn is_write_vectored(&self) -> bool {
         self.inner_io.is_write_vectored()
     }
@@ -356,6 +362,7 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
         self.inner_io.write_all(buf)
     }
     #[rustversion::nightly]
+    #[cfg(feature = "write_all_vectored")]
     fn write_all_vectored(&mut self, mut bufs: &mut [IoSlice<'_>]) -> IOResult<()> {
         self.inner_io.write_all_vectored(bufs)
     }
