@@ -153,6 +153,27 @@ where
     }
 }
 
+impl<T: Read, C: Extend<IopInfoPair>> IOStatWrapper<T, C> {
+    fn append_read_entry(&mut self,
+            tried_len: usize, read_result: &IOResult<usize>) {
+        let extend_item: [IopInfoPair; 1] = match read_result {
+            Ok(n) => {
+                self.read_call_counter.increment_success();
+                self.read_byte_counter += n;
+                self.seek_pos += u64::try_from(*n).unwrap();
+                [(IopActions::Read(tried_len),
+                    IopResults::Read(Ok(*n)))]
+            },
+            Err(ref e) => {
+                self.read_call_counter.increment_failure();
+                [(IopActions::Read(tried_len),
+                    IopResults::Read(Err(e.kind())))]
+            }
+        };
+        self.iop_log.extend(extend_item);
+    }
+}
+
 impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
     //! We wrap most methods of [`Read`], including provided ones, and pass calls through to the inner I/O object.
     //! The I/O operation log and statistics are only explicitly updated in the [`Read::read()`] function, as it is expected that the other methods are implemented with it.
@@ -160,27 +181,36 @@ impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
     fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
         //! Passthrough for the `inner_io` read call that increments a call counter and appends a [`IopResults::Read`] object to the log.
         let read_result = self.inner_io.read(buf);
-        let extend_item: [IopInfoPair; 1] = match read_result {
-            Ok(n) => {
-                self.read_call_counter.increment_success();
-                self.read_byte_counter += n;
-                self.seek_pos += u64::try_from(n).unwrap();
-                [(IopActions::Read(buf.len()),
-                    IopResults::Read(Ok(n)))]
-            },
-            Err(ref e) => {
-                self.read_call_counter.increment_failure();
-                [(IopActions::Read(buf.len()),
-                    IopResults::Read(Err(e.kind())))]
-            }
-        };
-        self.iop_log.extend(extend_item);
+        self.append_read_entry(buf.len(), &read_result);
         read_result
     }
 
     #[rustversion::since(1.36)]
     fn read_vectored(&mut self, bufs: &mut [IoSliceMut<'_>]) -> IOResult<usize> {
-        self.inner_io.read_vectored(bufs)
+        // Use SuccessFailureCounter copies to check if inner uses default impl
+        let old_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        let read_result = self.inner_io.read_vectored(bufs);
+        let new_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        if new_read_ctr == old_read_ctr {
+            // inner_io provides its own implementation of read_vectored
+            #[rustversion::nightly]
+            #[cfg(feature = "can_vector")]
+            {
+                debug_assert!(self.inner_io.is_read_vectored());
+            }
+            let read_len = bufs.iter()
+                .map(|slice| slice.len())
+                .sum();
+            self.append_read_entry(read_len, &read_result);
+        } else {
+            // read_vectored calls read, and read would handle stat updates
+            #[rustversion::nightly]
+            #[cfg(feature = "can_vector")]
+            {
+                debug_assert!(!self.inner_io.is_read_vectored());
+            }
+        }
+        read_result
     }
     #[rustversion::nightly]
     #[cfg(feature = "can_vector")]
@@ -194,13 +224,30 @@ impl<T: Read, C: Extend<IopInfoPair>> Read for IOStatWrapper<T, C> {
         self.inner_io.initializer()
     }
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IOResult<usize> {
-        self.inner_io.read_to_end(buf)
+        // Use SuccessFailureCounter copies to check if inner uses default impl
+        let old_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        let read_result = self.inner_io.read_to_end(buf);
+        let new_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        if new_read_ctr == old_read_ctr {
+            // inner_io provides its own implementation of read_to_end
+            self.append_read_entry(buf.len(), &read_result);
+        } // else read_to_end calls read, and read would handle stat updates
+        read_result
     }
     fn read_to_string(&mut self, buf: &mut String) -> IOResult<usize> {
-        self.inner_io.read_to_string(buf)
+        // Use SuccessFailureCounter copies to check if inner uses default impl
+        let old_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        let read_result = self.inner_io.read_to_string(buf);
+        let new_read_ctr: SuccessFailureCounter<u64> = *self.read_call_counter();
+        if new_read_ctr == old_read_ctr {
+            // inner_io provides its own implementation of read_to_string
+            self.append_read_entry(buf.len(), &read_result);
+        } // else read_to_string calls read, and read would handle stat updates
+        read_result
     }
     #[rustversion::since(1.6)]
     fn read_exact(&mut self, buf: &mut [u8]) -> IOResult<()> {
+        // TODO
         self.inner_io.read_exact(buf)
     }
     fn by_ref(&mut self) -> &mut Self
@@ -281,15 +328,18 @@ impl<T: Seek, C: Extend<IopInfoPair>> Seek for IOStatWrapper<T, C> {
     }
     #[rustversion::since(1.55)]
     fn rewind(&mut self) -> IOResult<()> {
+        // TODO
         self.inner_io.rewind()
     }
     #[rustversion::nightly]
     #[cfg(feature = "seek_stream_len")]
     fn stream_len(&mut self) -> IOResult<u64> {
+        // TODO: decide how to log
         self.inner_io.stream_len()
     }
     #[rustversion::since(1.51)]
     fn stream_position(&mut self) -> IOResult<u64> {
+        // TODO: decide whether to log
         self.inner_io.stream_position()
     }
 }
@@ -307,32 +357,45 @@ impl<T: Seek, C> IOStatWrapper<T, C> {
     }
 }
 
+impl<T: Write, C: Extend<IopInfoPair>> IOStatWrapper<T, C> {
+    fn append_write_entry(&mut self,
+            tried_len: usize, write_result: &IOResult<usize>) {
+        let extend_item: [IopInfoPair; 1] = match write_result {
+            Ok(n) => {
+                self.write_call_counter.increment_success();
+                self.write_byte_counter += n;
+                self.seek_pos += u64::try_from(*n).unwrap();
+                [(IopActions::Write(tried_len),
+                    IopResults::Write(Ok(*n)))]
+            },
+            Err(ref e) => {
+                self.write_call_counter.increment_failure();
+                [(IopActions::Write(tried_len),
+                    IopResults::Write(Err(e.kind())))]
+            }
+        };
+        self.iop_log.extend(extend_item);
+    }
+}
+
 impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
     //! We wrap all methods of [`Write`], including provided ones, and pass calls through to the inner I/O object.
     //! The I/O operation log and statistics are explicitly updated in the [`Write::write()`] and [`Write::flush()`] functions, as it is expected that the other methods are implemented with them.
     fn write(&mut self, buf: &[u8]) -> IOResult<usize> {
         //! Passthrough for the `inner_io` write call that increments a call counter and appends a [`IopResults::Write`] object to the log.
         let write_result = self.inner_io.write(buf);
-        let extend_item: [IopInfoPair; 1] = match write_result {
-            Ok(n) => {
-                self.write_call_counter.increment_success();
-                self.write_byte_counter += n;
-                self.seek_pos += u64::try_from(n).unwrap();
-                [(IopActions::Write(buf.len()),
-                    IopResults::Write(Ok(n)))]
-            },
-            Err(ref e) => {
-                self.write_call_counter.increment_failure();
-                [(IopActions::Write(buf.len()),
-                    IopResults::Write(Err(e.kind())))]
-            }
-        };
-        self.iop_log.extend(extend_item);
+        self.append_write_entry(buf.len(), &write_result);
         write_result
     }
     fn flush(&mut self) -> IOResult<()> {
         //! Passthrough for the `inner_io` write call that increments a call counter and appends a [`IopResults::Flush`] object to the log.
         let flush_result = self.inner_io.flush();
+        // Refactoring this out is deferred
+        /* This seems to be the only place where flushing happens
+
+           Other impls could copy-and-paste custom flush code of course,
+           and we'd be none the wiser, but such code would be low-quality anyway
+        */
         let extend_item: [IopInfoPair; 1] = match flush_result {
             Ok(()) => {
                 self.write_flush_counter.increment_success();
@@ -350,7 +413,30 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
 
     #[rustversion::since(1.36.0)]
     fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IOResult<usize> {
-        self.inner_io.write_vectored(bufs)
+        // Use SuccessFailureCounter copies to check if inner uses default impl
+        let old_write_ctr: SuccessFailureCounter<u64> = *self.write_call_counter();
+        let write_result = self.inner_io.write_vectored(bufs);
+        let new_write_ctr: SuccessFailureCounter<u64> = *self.write_call_counter();
+        if new_write_ctr == old_write_ctr {
+            // inner_io provides its own implementation of write_vectored
+            #[rustversion::nightly]
+            #[cfg(feature = "can_vector")]
+            {
+                debug_assert!(self.inner_io.is_write_vectored());
+            }
+            let write_len = bufs.iter()
+                .map(|slice| slice.len())
+                .sum();
+            self.append_write_entry(write_len, &write_result);
+        } else {
+            // write_vectored calls write, and write would handle stat updates
+            #[rustversion::nightly]
+            #[cfg(feature = "can_vector")]
+            {
+                debug_assert!(!self.inner_io.is_write_vectored());
+            }
+        }
+        write_result
     }
     #[rustversion::nightly]
     #[cfg(feature = "can_vector")]
@@ -360,14 +446,17 @@ impl<T: Write, C: Extend<IopInfoPair>> Write for IOStatWrapper<T, C> {
     // Keep the original declaration even if mut is unneeded here
     #[allow(unused_mut)]
     fn write_all(&mut self, mut buf: &[u8]) -> IOResult<()> {
+        // TODO
         self.inner_io.write_all(buf)
     }
     #[rustversion::nightly]
     #[cfg(feature = "write_all_vectored")]
     fn write_all_vectored(&mut self, mut bufs: &mut [IoSlice<'_>]) -> IOResult<()> {
+        // TODO
         self.inner_io.write_all_vectored(bufs)
     }
     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> IOResult<()> {
+        // TODO
         self.inner_io.write_fmt(fmt)
     }
     fn by_ref(&mut self) -> &mut Self
